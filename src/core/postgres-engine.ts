@@ -44,6 +44,7 @@ export class PostgresEngine implements BrainEngine {
   }
 
   async putPage(slug: string, page: PageInput): Promise<Page> {
+    validateSlug(slug);
     const sql = db.getConnection();
     const hash = contentHash(page.compiled_truth, page.timeline || '');
     const frontmatter = page.frontmatter || {};
@@ -274,7 +275,7 @@ export class PostgresEngine implements BrainEngine {
         SELECT p.id, p.slug, p.title, p.type, 0 as depth
         FROM pages p WHERE p.slug = ${slug}
 
-        UNION ALL
+        UNION
 
         SELECT p2.id, p2.slug, p2.title, p2.type, g.depth + 1
         FROM graph g
@@ -436,7 +437,7 @@ export class PostgresEngine implements BrainEngine {
         frontmatter = pv.frontmatter,
         updated_at = now()
       FROM page_versions pv
-      WHERE pages.slug = ${slug} AND pv.id = ${versionId}
+      WHERE pages.slug = ${slug} AND pv.id = ${versionId} AND pv.page_id = pages.id
     `;
   }
 
@@ -536,6 +537,12 @@ export class PostgresEngine implements BrainEngine {
 }
 
 // Helpers
+function validateSlug(slug: string): void {
+  if (!slug || /\.\./.test(slug) || /^\//.test(slug) || !/^[a-z0-9][a-z0-9/_-]*$/.test(slug)) {
+    throw new Error(`Invalid slug: "${slug}". Slugs must be lowercase alphanumeric with / - _ separators, no path traversal.`);
+  }
+}
+
 function contentHash(compiledTruth: string, timeline: string): string {
   return createHash('sha256').update(compiledTruth + '\n---\n' + timeline).digest('hex');
 }

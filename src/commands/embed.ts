@@ -86,11 +86,17 @@ async function embedAll(engine: BrainEngine, staleOnly: boolean) {
 
     try {
       const embeddings = await embedBatch(toEmbed.map(c => c.chunk_text));
-      const updated: ChunkInput[] = toEmbed.map((c, j) => ({
+      // Build a map of new embeddings by chunk_index
+      const embeddingMap = new Map<number, Float32Array>();
+      for (let j = 0; j < toEmbed.length; j++) {
+        embeddingMap.set(toEmbed[j].chunk_index, embeddings[j]);
+      }
+      // Preserve ALL chunks, only update embeddings for stale ones
+      const updated: ChunkInput[] = chunks.map(c => ({
         chunk_index: c.chunk_index,
         chunk_text: c.chunk_text,
         chunk_source: c.chunk_source,
-        embedding: embeddings[j],
+        embedding: embeddingMap.get(c.chunk_index) ?? undefined,
         token_count: c.token_count || Math.ceil(c.chunk_text.length / 4),
       }));
       await engine.upsertChunks(page.slug, updated);

@@ -79,7 +79,7 @@ async function embedBatchWithRetry(texts: string[]): Promise<Float32Array[]> {
   }
 
   // Should not reach here
-  return texts.map(() => new Float32Array(DIMENSIONS));
+  throw new Error('Embedding failed after all retries');
 }
 
 function exponentialDelay(attempt: number): number {
