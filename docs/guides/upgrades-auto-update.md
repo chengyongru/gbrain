@@ -1,147 +1,181 @@
-## 17. Upgrades and Auto-Update Notifications
+# Upgrades and Auto-Update Notifications
 
-GBrain ships updates frequently. There are two ways an upgrade happens:
+## Goal
 
-**User says "upgrade gbrain":** Run `gbrain check-update --json` to see what's new,
-then run the Full Upgrade Flow below (Steps 1-6). Do NOT just run `gbrain upgrade`
-and stop. The post-upgrade steps (re-read skills, run migrations, schema sync) are
-where the value is. Without them, the agent has new code but old behavior.
+Users get notified of new GBrain features conversationally, and the agent walks them through upgrading with post-upgrade migrations that make the new version actually work.
 
-**Cron finds an update:** The auto-update cron checks for new versions and messages
-the user. The user decides whether to upgrade. If yes, run the same Full Upgrade
-Flow (Steps 1-6).
+## What the User Gets
 
-The upgrade is always manual. Never install without the user's explicit permission.
+Without this: GBrain ships updates but nobody knows. The user stays on an old
+version with stale skills and missing features. Or worse, someone runs
+`gbrain upgrade` but skips the post-upgrade steps, leaving new code with old
+agent behavior.
+
+With this: the agent checks for updates daily, sells the upgrade with punchy
+benefit-focused bullets, waits for explicit permission, then runs the full
+upgrade flow including re-reading skills, running migrations, and syncing
+schema. The user gets new capabilities automatically.
+
+## Implementation
 
 ### The Check (cron-initiated)
 
-Run `gbrain check-update --json`. If `update_available` is false, stay completely
-silent — do nothing. If true, message the user on their preferred channel.
+```
+check_for_update():
+  result = run("gbrain check-update --json")
 
-### The Message
+  if not result.update_available:
+    exit_silently()  // do NOT message the user
 
-Sell the upgrade. The user should feel "hell yeah, I want that." Lead with what
-they can DO now that they couldn't before, not what files changed. Frame as
-capabilities and benefits, not implementation details. Make them excited that
-GBrain keeps getting better. 2-3 punchy bullets, no raw markdown, no file names.
+  // Sell the upgrade — lead with what they can DO, not what changed
+  message = compose_upgrade_message(
+    current: result.current_version,
+    latest: result.latest_version,
+    changelog: result.changelog
+  )
+  send_to_user(message, respect_quiet_hours=true)
+```
 
+### The Upgrade Message
+
+Sell the upgrade. The user should feel "hell yeah, I want that." Lead with
+what they can DO now that they couldn't before, not what files changed.
+
+```
 > **GBrain v0.5.0 is available** (you're on v0.4.0)
 >
 > What's new:
 > - Your brain never falls behind. Live sync keeps the vector DB current
->   automatically, so edits show up in search within minutes, not "whenever
->   someone remembers to run sync"
-> - New verification runbook catches silent failures: the pooler bug that
->   skips pages, missing embeddings, stale search results
+>   automatically, so edits show up in search within minutes
+> - New verification runbook catches silent failures before they bite you
 > - New installs set up live sync automatically. No more manual setup step
 >
 > Want me to upgrade? I'll update everything and refresh my playbook.
 >
 > (Reply **yes** to upgrade, **not now** to skip, **weekly** to check
 > less often, or **stop** to turn off update checks)
+```
 
 ### Handling Responses
 
 | User says | Action |
 |-----------|--------|
-| yes / y / sure / ok / do it / upgrade / go ahead | Run the **full upgrade flow** (see below) |
+| yes / y / sure / ok / do it / upgrade | Run the full upgrade flow (below) |
 | not now / later / skip / snooze | Acknowledge, check again next cycle |
-| weekly | Store preference in agent memory, switch cron to weekly |
+| weekly | Store preference, switch cron to weekly |
 | daily | Store preference, switch cron back to daily |
-| stop / unsubscribe / no more | Store preference, disable the cron. Tell user: "Update checks disabled. Say 'resume gbrain updates' or run `gbrain check-update` anytime." |
+| stop / unsubscribe / no more | Disable the cron. Tell user how to resume |
 
-Acceptable "yes": any clearly affirmative response. When in doubt, ask again.
 **Never auto-upgrade.** Always wait for explicit confirmation.
 
 ### The Full Upgrade Flow (after user says yes)
 
-**Step 1: Update the binary/package.**
-Run `gbrain upgrade`. This updates the CLI and all shipped files (skills, docs, migrations).
+```
+full_upgrade():
+  // Step 1: Update the binary/package
+  run("gbrain upgrade")
 
-**Step 2: Re-read all updated skills.**
-Find the gbrain package directory (`bun pm ls 2>/dev/null | grep gbrain` or check
-`node_modules/gbrain/`). Re-read every skill file in `skills/*/SKILL.md` to pick up
-new patterns and workflows. Updated skills = better agent behavior. The user gets
-this for free.
+  // Step 2: Re-read all updated skills
+  for skill in find("skills/*/SKILL.md"):
+    read_and_internalize(skill)  // updated skills = better agent behavior
 
-**Step 3: Re-read the production reference docs.**
-Read `docs/GBRAIN_SKILLPACK.md` and `docs/GBRAIN_RECOMMENDED_SCHEMA.md` fresh from
-the gbrain package directory. These contain the latest patterns, cron schedules,
-and integration guides. This is how the agent learns about new capabilities like
-live sync (Section 18).
+  // Step 3: Re-read production reference docs
+  read("docs/GBRAIN_SKILLPACK.md")
+  read("docs/GBRAIN_RECOMMENDED_SCHEMA.md")
 
-**Step 4: Check for version-specific migration directives.**
-Look for `skills/migrations/v[version].md` files between the old and new version.
-If they exist, read and execute them **in order**. These are the post-upgrade
-actions that make the new version actually work for existing users (e.g., v0.5.0
-migration sets up live sync and runs the verification runbook). Do NOT skip this
-step. Without migrations, the agent has new code but the user's environment hasn't
-changed.
+  // Step 4: Check for version-specific migration directives
+  for version in range(old_version, new_version):
+    migration = find(f"skills/migrations/v{version}.md")
+    if migration exists:
+      read_and_execute(migration)  // in order, don't skip
 
-**Step 5: Schema sync — suggest new recommendations without undoing user choices.**
-Read `~/.gbrain/update-state.json` to see what the user previously adopted, declined,
-and customized. For each NEW recommendation in the updated schema:
-- If the user never saw it before, suggest it
-- If the user previously declined it, do NOT re-suggest
-- Never modify or remove the user's custom directories
+  // Step 5: Schema sync — suggest new, respect declined
+  state = read("~/.gbrain/update-state.json")
+  for recommendation in new_schema_recommendations:
+    if recommendation not in state.declined:
+      suggest_to_user(recommendation)
+  update(state, new_choices)
 
-Update `~/.gbrain/update-state.json` with new choices and bump `schema_version_applied`.
+  // Step 6: Report what changed
+  summarize_to_user(actions_taken)
+```
 
-**Step 6: Report what changed.**
-Tell the user what was upgraded and what actions were taken.
+### Migration Files
+
+Migration files live at `skills/migrations/vX.Y.Z.md`. They contain agent
+instructions (not scripts) for post-upgrade actions that make the new version
+work for existing users. Example: v0.5.0 migration sets up live sync and
+runs the verification runbook.
+
+The agent reads migration files in version order and executes them step by
+step. Without migrations, the agent has new code but the user's environment
+hasn't changed.
+
+### Cron Registration
+
+```
+Name: gbrain-update-check
+Default schedule: 0 9 * * * (daily 9 AM)
+Weekly schedule: 0 9 * * 1 (Monday 9 AM)
+Prompt: "Run gbrain check-update --json. If update_available is true,
+  summarize the changelog and message me asking if I'd like to upgrade.
+  If false, stay silent."
+```
 
 ### Frequency Preferences
 
 Default: daily. Store in agent memory as `gbrain_update_frequency: daily|weekly|off`.
 Also persist in `~/.gbrain/update-state.json` so it survives agent context resets.
 
-### Quiet Hours
+### Standalone Skillpack Users
 
-Standard quiet hours gate (Section 9). Update notifications are never urgent.
-Hold for morning briefing.
-
-### Cron Registration
-
-Name: `gbrain-update-check`
-Default schedule: `0 9 * * *` (daily 9 AM)
-Weekly schedule: `0 9 * * 1` (Monday 9 AM)
-Prompt: "Run `gbrain check-update --json`. If update_available is true, summarize
-the changelog and message me asking if I'd like to upgrade. If false, stay silent."
-
-### Standalone Skillpack Users (no gbrain CLI)
-
-If you loaded this SKILLPACK directly (copied the file or read from GitHub) without
-installing gbrain, you can still stay current. Both this file and
-GBRAIN_RECOMMENDED_SCHEMA.md have version markers in their first lines:
-
-```
-<!-- skillpack-version: 0.5.0 -->
-<!-- source: https://raw.githubusercontent.com/garrytan/gbrain/master/docs/GBRAIN_SKILLPACK.md -->
-```
-
-**Self-update check:** Periodically fetch the first 3 lines of the source URL and
-compare the version marker against your local copy:
+If you loaded this SKILLPACK directly (copied or read from GitHub) without
+installing gbrain, you can still stay current. Both GBRAIN_SKILLPACK.md and
+GBRAIN_RECOMMENDED_SCHEMA.md have version markers:
 
 ```bash
 curl -s https://raw.githubusercontent.com/garrytan/gbrain/master/docs/GBRAIN_SKILLPACK.md | head -1
 # Returns: <!-- skillpack-version: X.Y.Z -->
 ```
 
-If the remote version is newer (minor or major bump, same rule as the CLI), fetch
-the full file and replace your local copy. Do the same for GBRAIN_RECOMMENDED_SCHEMA.md.
+If the remote version is newer, fetch the full file and replace your local
+copy. Set up a weekly cron to check automatically.
 
-**Cron for standalone users:**
-Name: `gbrain-skillpack-update`
-Schedule: `0 9 * * 1` (weekly Monday 9 AM)
-Prompt: "Fetch the first line of https://raw.githubusercontent.com/garrytan/gbrain/master/docs/GBRAIN_SKILLPACK.md
-and compare the skillpack-version against my local copy. If newer, fetch the full
-file, re-read it, and tell the user what changed. Do the same for GBRAIN_RECOMMENDED_SCHEMA.md.
-If both are current, stay silent."
+## Tricky Spots
 
-This way standalone users get new patterns, workflows, and schema recommendations
-without installing the gbrain CLI. The agent fetches, diffs, and updates its own playbook.
+1. **Never auto-install.** The upgrade must always wait for the user's explicit
+   "yes." Even if the cron detects an update at 9 AM and the changelog looks
+   great, the agent messages the user and waits. Auto-installing can break
+   workflows, introduce breaking changes, or interrupt work in progress.
 
----
+2. **Migration files are agent instructions, not scripts.** They tell the agent
+   what to do step by step in plain language. They are NOT bash scripts to
+   execute blindly. The agent reads them, understands the context, and adapts
+   to the user's specific environment (e.g., skip a step if the user already
+   has live sync configured).
+
+3. **check-update should run on a daily cron.** Don't rely on the user
+   remembering to check for updates. The cron runs `gbrain check-update --json`
+   daily at 9 AM (respecting quiet hours). If there's nothing new, it stays
+   completely silent. The user only hears about updates when there IS something
+   worth upgrading to.
+
+## How to Verify
+
+1. **Run check-update and verify detection.** Execute
+   `gbrain check-update --json`. Verify it returns the current version and
+   correctly reports whether an update is available. If `update_available`
+   is false, verify the version matches the latest release on GitHub.
+
+2. **Verify migration files are readable.** List `skills/migrations/` and
+   check that each file follows the naming convention `vX.Y.Z.md`. Open one
+   and verify it contains step-by-step agent instructions, not raw scripts.
+   The agent should be able to read and execute each step.
+
+3. **Test the full upgrade flow end-to-end.** If an update is available, say
+   "yes" and watch the agent execute the full flow: upgrade, re-read skills,
+   run migrations, sync schema, report. Verify each step completes and the
+   agent reports what changed.
 
 ---
 

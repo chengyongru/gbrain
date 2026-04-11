@@ -2,8 +2,7 @@
 
 ## Goal
 
-Separate agent behavior (replaceable) from world knowledge (permanent) into
-two repos with strict boundaries.
+Separate agent behavior (replaceable) from world knowledge (permanent) into two repos with strict boundaries.
 
 ## What the User Gets
 
@@ -13,22 +12,32 @@ and you lose your knowledge. Switch knowledge tools and you lose your agent setu
 With this: your brain (14,700+ files of people, companies, meetings, ideas)
 survives any agent swap. Your agent config survives any knowledge tool swap.
 
----
+## Implementation
 
-Your AI agent setup should use two separate repositories with strict separation.
-
-## The Boundary Test
+### The Boundary Test
 
 **"Is this about how the agent operates, or is this knowledge about the world?"**
 
-| Question | If YES → Agent Repo | If YES → Brain Repo |
+| Question | If YES -> Agent Repo | If YES -> Brain Repo |
 |----------|---------------------|---------------------|
-| Would this file transfer if you switched AI agents? | YES | — |
-| Would this file transfer if you switched to a different person? | — | YES |
-| Is this about how the agent behaves? | YES | — |
-| Is this about a person, company, deal, meeting, or idea? | — | YES |
+| Would this file transfer if you switched AI agents? | YES | -- |
+| Would this file transfer if you switched to a different person? | -- | YES |
+| Is this about how the agent behaves? | YES | -- |
+| Is this about a person, company, deal, meeting, or idea? | -- | YES |
 
-## Agent Repo (operational config)
+### Quick Decision Tree
+
+```
+New file to create?
+  |-- About a person, company, deal, project, meeting, idea? -> brain/
+  |-- A spec, research doc, or strategic analysis? -> brain/
+  |-- An original idea or observation? -> brain/originals/
+  |-- A daily session log or heartbeat state? -> agent-repo/
+  |-- A skill, config, cron, or ops file? -> agent-repo/
+  |-- A task or todo? -> agent-repo/tasks/
+```
+
+### Agent Repo (operational config)
 
 How the agent works. Identity, configuration, operational state.
 
@@ -56,7 +65,7 @@ agent-repo/
     └── YYYY-MM-DD.md      # Daily session logs
 ```
 
-## Brain Repo (world knowledge)
+### Brain Repo (world knowledge)
 
 What you know. People, companies, deals, meetings, ideas, media.
 This is the repo GBrain indexes.
@@ -89,7 +98,7 @@ brain/
 └── Apple Notes/           # Imported Apple Notes archive
 ```
 
-## The Hard Rule
+### The Hard Rule
 
 **Never write knowledge to the agent repo.** If a skill, sub-agent, or cron
 job needs to create a file about a person, company, deal, meeting, project,
@@ -97,22 +106,10 @@ or idea, it MUST write to the brain repo, never to the agent repo.
 
 The brain is the permanent record. The agent repo is replaceable.
 
-## Quick Decision Tree
+### Why Two Repos
 
-```
-New file to create?
-  ├── About a person, company, deal, project, meeting, idea? → brain/
-  ├── A spec, research doc, or strategic analysis? → brain/
-  ├── An original idea or observation? → brain/originals/
-  ├── A daily session log or heartbeat state? → agent-repo/
-  ├── A skill, config, cron, or ops file? → agent-repo/
-  └── A task or todo? → agent-repo/tasks/
-```
-
-## Why Two Repos
-
-**Independence.** You can switch AI agents (OpenClaw → Hermes → custom) without
-losing your knowledge. You can switch knowledge tools (GBrain → something else)
+**Independence.** You can switch AI agents (OpenClaw -> Hermes -> custom) without
+losing your knowledge. You can switch knowledge tools (GBrain -> something else)
 without losing your agent setup.
 
 **Scale.** The brain grows large (10,000+ files). The agent repo stays small
@@ -124,6 +121,38 @@ notes). The agent repo contains operational config. Different access controls.
 **GBrain indexes the brain repo.** Run `gbrain sync --repo ~/brain/` to keep
 the search index current. The agent repo is never indexed by GBrain.
 
+## Tricky Spots
+
+1. **Never write knowledge to the agent repo.** This is the most common
+   violation. A skill that creates a person page, a cron job that saves
+   meeting notes, a sub-agent that captures an idea -- all of these MUST
+   write to the brain repo. If it's about the world, it goes in the brain.
+
+2. **The brain is the permanent record.** When in doubt, ask: "Would this
+   file survive switching to a completely different AI agent?" If yes, it
+   belongs in the brain. Agent configs, skills, cron jobs, and operational
+   state are replaceable. People, companies, ideas, and meetings are not.
+
+3. **Don't index the agent repo.** GBrain indexes the brain repo only.
+   Running `gbrain sync` against the agent repo pollutes search results
+   with operational config instead of world knowledge.
+
+## How to Verify
+
+1. **Check file placement.** After any skill or cron job creates a file,
+   verify it landed in the correct repo. Person/company/idea/meeting files
+   should be in `brain/`. Skill/config/cron/state files should be in the
+   agent repo. Any knowledge file in the agent repo is a boundary violation.
+
+2. **Run the boundary test.** Pick 5 recently created files and ask: "Would
+   this transfer if I switched AI agents?" and "Would this transfer if I
+   switched to a different person?" If the answers don't match the file's
+   location, it's in the wrong repo.
+
+3. **Verify GBrain only indexes brain.** Run `gbrain stats` and check the
+   indexed paths. None should point to the agent repo directory. If agent
+   config files appear in search results, the sync target is misconfigured.
+
 ---
 
-*Part of the [GBrain Skillpack](../GBRAIN_SKILLPACK.md). See also: [Brain vs Agent Memory](brain-vs-memory.md)*
+*Part of the [GBrain Skillpack](../GBRAIN_SKILLPACK.md).*

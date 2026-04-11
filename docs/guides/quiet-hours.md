@@ -2,8 +2,7 @@
 
 ## Goal
 
-Hold all notifications during sleep hours. Merge held messages into the
-morning briefing. Adjust automatically when the user travels.
+Hold all notifications during sleep hours, merge held messages into the morning briefing, and adjust automatically when the user travels.
 
 ## What the User Gets
 
@@ -14,11 +13,9 @@ With this: the brain works overnight (dream cycle, collectors, enrichment)
 but notifications are held until morning. Travel to Tokyo? The system adjusts
 automatically from your calendar, no config change needed.
 
----
+## Implementation
 
-Your brain never sleeps, but your notifications should.
-
-## Quiet Hours Gate
+### Quiet Hours Gate
 
 Every cron job that sends notifications must check quiet hours FIRST.
 
@@ -35,7 +32,7 @@ is_quiet(local_hour):
 2. Convert current UTC time to local time
 3. If quiet hours: hold the message, don't send
 
-## Held Messages
+### Held Messages
 
 During quiet hours, output goes to a held directory instead of being sent:
 
@@ -63,7 +60,7 @@ morning_briefing():
 This way nothing is lost. Overnight cron results get folded into the
 first thing the user sees in the morning.
 
-## Timezone Awareness
+### Timezone Awareness
 
 The agent should know what timezone the user is in. Store it in
 the agent's operational state:
@@ -85,7 +82,7 @@ the agent's operational state:
 **All times shown to the user should be in their LOCAL timezone.** Never
 show UTC or a timezone the user isn't in.
 
-## Implementation Pattern
+### Shell Implementation
 
 ```bash
 #!/bin/bash
@@ -116,7 +113,7 @@ fi
 send_notification "$OUTPUT"
 ```
 
-## Configurable Hours
+### Configurable Hours
 
 Some users want different quiet hours. Store the config:
 
@@ -132,6 +129,37 @@ Some users want different quiet hours. Store the config:
 
 Set `enabled: false` to disable quiet hours entirely (e.g., for 24/7 monitoring).
 
+## Tricky Spots
+
+1. **Gate on EVERY job.** The quiet hours check must run before every single
+   cron job that produces notifications. If even one job skips the gate, the
+   user gets a 3 AM ping and loses trust in the entire system. No exceptions.
+
+2. **Held messages MUST be picked up.** If the morning briefing doesn't read
+   `/tmp/cron-held/`, overnight results vanish silently. Verify the briefing
+   skill reads and clears the held directory. Orphaned held files mean the
+   pickup integration is broken.
+
+3. **Timezone auto-detection is fragile.** Calendar-based timezone detection
+   relies on the user having airline/hotel events with location data. If the
+   user books travel without calendar entries, the system won't detect the
+   move. Fall back to activity-hour analysis (responding at 3 AM PT = probably
+   not in PT anymore) and ask the user if uncertain.
+
+## How to Verify
+
+1. **Set quiet hours to the current hour.** Temporarily set `QUIET_START` to
+   one hour before now and `QUIET_END` to one hour after. Trigger a cron job.
+   Verify the output goes to `/tmp/cron-held/` instead of being sent.
+
+2. **Check held message pickup.** After step 1, run or simulate the morning
+   briefing. Verify the held message appears in the "Overnight Updates"
+   section and the file is deleted from `/tmp/cron-held/`.
+
+3. **Verify timezone adjustment.** Change the timezone config to a zone where
+   it's currently quiet hours. Trigger a notification. Verify it's held. Change
+   back to your real timezone during active hours. Trigger again. Verify it sends.
+
 ---
 
-*Part of the [GBrain Skillpack](../GBRAIN_SKILLPACK.md). See also: [Cron Schedule](cron-schedule.md), [Operational Disciplines](operational-disciplines.md)*
+*Part of the [GBrain Skillpack](../GBRAIN_SKILLPACK.md).*

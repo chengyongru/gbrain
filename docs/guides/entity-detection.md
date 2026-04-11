@@ -2,8 +2,7 @@
 
 ## Goal
 
-Every inbound message gets scanned for original thinking AND entity mentions.
-The brain grows on every conversation, automatically.
+Every inbound message gets scanned for original thinking AND entity mentions so the brain grows on every conversation, automatically.
 
 ## What the User Gets
 
@@ -14,12 +13,10 @@ With this: every person, company, and idea mentioned in conversation gets a
 brain page. Next time Pedro comes up, the agent already has context. The
 brain compounds.
 
-## How It Works
+## Implementation
 
 Spawn a lightweight sub-agent on EVERY inbound message. Do NOT wait for it
 to finish before responding. It runs in parallel.
-
-### Implementation
 
 ```
 on_every_message(message_text, source_context):
@@ -168,9 +165,7 @@ to Pedro" only works if Pedro's page links back to every mention.
    Variant spellings, nicknames, and company abbreviations cause duplicates.
    "Pedro Franceschi" and "Pedro" might be the same person.
 
-## How to Verify It Works
-
-After setup, run these checks:
+## How to Verify
 
 1. **Send a message mentioning a person.** Say "I had coffee with Sarah Chen
    from Acme Corp today." Verify: brain/people/sarah-chen.md was created or
@@ -192,4 +187,4 @@ After setup, run these checks:
 
 ---
 
-*Part of the [GBrain Skillpack](../GBRAIN_SKILLPACK.md). See also: [Idea Capture](idea-capture.md), [Sub-Agent Routing](sub-agent-routing.md)*
+*Part of the [GBrain Skillpack](../GBRAIN_SKILLPACK.md).*
